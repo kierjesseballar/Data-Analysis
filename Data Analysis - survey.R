@@ -278,6 +278,23 @@ model_1_results <- results |>
     p_value < 0.1 ~ ".",
     TRUE ~ "" 
   )) |> 
+    mutate(rowname = str_replace_all(rowname, c(
+    "urbanity_final"    = "Urbanity: ",
+    "SchType"           = "School Sector: ",
+    "S_Age"             = "Student Age",
+    "S_Gender"          = "Gender: ",
+    "S_SES"             = "Socio-economic Status (SES)",
+    "S_MISCED"          = "Mother's Education Level",
+    "S_FISCED"          = "Father's Education Level",
+    "S_ATTREAD"         = "Attitude Towards Reading",
+    "ST13"              = "Preschool: ",
+    "ST14"              = "Grade Repetition: ",
+    "C_RATIO"           = "Student-Teacher Ratio",
+    "school_multigrade" = "Organization: ",
+    "school_multishift" = "Shift System: ",
+    "SC10"              = "Daily Hours: ",
+    "SC11"              = "Annual Weeks: "
+  ))) |> 
   select(-se) # per prof. brady west, can't exponeniate se
 
 # Result: expected rural has higher chance of being in band 2
@@ -328,6 +345,23 @@ model_2_results <- results |>
     p_value < 0.1 ~ ".",
     TRUE ~ "" 
   )) |> 
+  mutate(rowname = str_replace_all(rowname, c(
+    "urbanity_final"    = "Urbanity: ",
+    "SchType"           = "School Sector: ",
+    "S_Age"             = "Student Age",
+    "S_Gender"          = "Gender: ",
+    "S_SES"             = "Socio-economic Status (SES)",
+    "S_MISCED"          = "Mother's Education Level",
+    "S_FISCED"          = "Father's Education Level",
+    "S_ATTREAD"         = "Attitude Towards Reading",
+    "ST13"              = "Preschool: ",
+    "ST14"              = "Grade Repetition: ",
+    "C_RATIO"           = "Student-Teacher Ratio",
+    "school_multigrade" = "Organization: ",
+    "school_multishift" = "Shift System: ",
+    "SC10"              = "Daily Hours: ",
+    "SC11"              = "Annual Weeks: "
+  ))) |> 
   select(-se) # per prof. brady west, can't exponeniate se
 
 # Result: interaction between rural and multishift BUT is this due to omitted variable bias?
