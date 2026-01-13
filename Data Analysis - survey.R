@@ -41,7 +41,7 @@ facility_vars <- c(
   "SC07D", # foreign lang schools
   "SC07E", # museum
   "SC07J", # shopping center
-  "SC07K", # market
+  # "SC07K", # market
   "SC07M"  # hospital
   )
 
@@ -69,8 +69,8 @@ sea_school_clean <- sea_school |>
   # five small establishments, at least five facilities from barangay hall
   mutate(urbanity_final = case_when(
     SC06 == "1" ~ "Rural", # less than 3,000 people
-    SC06 == "2" & urban_facility_index < 3 ~ "Rural", # bet 3k to 15k
-    SC06 == "2" & urban_facility_index >= 3 ~ "Urban-like", # bet 3k to 15k
+    SC06 == "2" & urban_facility_index < 2 ~ "Rural", # bet 3k to 15k
+    SC06 == "2" & urban_facility_index >= 2 ~ "Urban-like", # bet 3k to 15k
     SC06 == "3" ~ "Urban",
     SC06 == "4" ~ "Urban",
     SC06 == "5" ~ "Urban",
@@ -110,15 +110,19 @@ school_student_merge <- sea_student |>
   )) |> 
   # Create single grade and multigrade id 
   mutate(school_multigrade = case_when(
-    SC09A == "1" & SC09B == "2" ~ "Single-grade only",
-    SC09A == "2" & SC09B == "1" ~ "Multigrade only",
-    SC09A == "1" & SC09B == "1" ~ "Mixed (Single & Multi)",
-    SC09A == "2" & SC09B == "2" ~ "Neither/Other",
-    TRUE ~ NA_character_
+    SC09A == "1" & SC09B == "2" ~ "Single grade only",
+    # SC09A == "2" & SC09B == "1" ~ "Multigrade only",
+    # SC09A == "1" & SC09B == "1" ~ "Mixed (Single & Multi)",
+    # SC09A == "2" & SC09B == "2" ~ "Neither/Other",
+    TRUE ~ "Non-Single grade"
   )) |> 
   mutate(school_multigrade = factor(school_multigrade,
-                levels = c("Single-grade only", "Multigrade only", 
-                           "Mixed (Single & Multi)", "Neither/Other"))
+              levels = c("Single grade only", "Non-Single grade"))) |> 
+  # mutate(school_multigrade = factor(school_multigrade,
+  #               levels = c("Single-grade only", "Multigrade only", 
+  #                          "Mixed (Single & Multi)", "Neither/Other"))) |> 
+  mutate(urbanity_final = factor(urbanity_final,
+                levels = c("Urban", "Rural", "Urban-like"))
   ) |> 
   # relabel the multishift to be clearer
   mutate(school_multishift = case_when(
@@ -127,9 +131,21 @@ school_student_merge <- sea_student |>
   )) |> 
   mutate(school_multishift = factor(school_multishift,
                 levels = c("single-shift", "multi-shift"))
-  )
+  ) |> 
+  # combine hours 
+  mutate(SC10 = case_when(
+    SC10 == "1" ~ "Five hours and less",
+    SC10 == "2" ~ "Five hours and less",
+    SC10 == "3" ~ "Five hours and less",
+    # f
+    SC10 == "4" ~ "Six hours and above",
+    SC10 == "5" ~ "Six hours and above",
+    SC10 == "6" ~ "Six hours and above",
 
+    T ~ NA
+  ))
 
+attr(sea_school$SC10, "labels")
 attr(sea_student$PL_PV1_R, "labels")
 
 ###### |> Make survey design object -----
@@ -167,17 +183,55 @@ predictors <- c(
     "SC11" # In a typical school year, approximately how many instructional weeks do students receive lessons in the school?
     )
 
+predictor_labels <- c(
+    "urbanity_final" = "Urbanity Index",
+    "SchType" = "School Sector (Public/Private)",
+    "S_Age" = "Student Age",
+    "S_Gender" = "Student Gender",
+    "S_SES" = "Socio-economic Status (SES)",
+    "S_MISCED" = "Mother's Education Level",
+    "S_FISCED" = "Father's Education Level",
+    "S_ATTREAD" = "Attitude Towards Reading",
+    "ST13" = "Preschool Attendance",
+    "ST14" = "Grade Repetition",
+    "C_RATIO" = "Student-Teacher Ratio",
+    "school_multigrade" = "Class Organization (Multigrade vs Single)",
+    "school_multishift" = "Shift System (Single vs Multi-shift)",
+    "SC10" = "Daily Instructional Hours",
+    "SC11" = "Annual Instructional Weeks"
+)
+
 # Check Attributes
-for (var in predictors) {
-  val_labs <- attr(school_student_merge[[var]], "labels")
-  cat("---", var, "---\n")
-  if (!is.null(val_labs)) {
-    print(val_labs)
+labels_list <- lapply(predictors, function(var) {
+  labs <- attr(school_student_merge[[var]], "labels")
+  if (!is.null(labs)) {
+    paste(names(labs), "=", labs, collapse = " | ")
   } else {
-    cat("No value labels found (likely a continuous variable).\n")
+    "Continuous / No Labels"
   }
-  cat("\n")
-}
+})
+
+predictor_lookup <- data.frame(
+  Variable = predictors,
+  Value_Mapping = unlist(labels_list)
+) |> 
+  mutate(Variable = str_replace_all(Variable, c(
+    "urbanity_final"    = "Urbanity: ",
+    "SchType"           = "School Sector: ",
+    "S_Age"             = "Student Age",
+    "S_Gender"          = "Gender: ",
+    "S_SES"             = "Socio-economic Status (SES)",
+    "S_MISCED"          = "Mother's Education Level",
+    "S_FISCED"          = "Father's Education Level",
+    "S_ATTREAD"         = "Attitude Towards Reading",
+    "ST13"              = "Preschool: ",
+    "ST14"              = "Grade Repetition: ",
+    "C_RATIO"           = "Student-Teacher Ratio",
+    "school_multigrade" = "Organization: ",
+    "school_multishift" = "Shift System: ",
+    "SC10"              = "Daily Hours: ",
+    "SC11"              = "Annual Weeks: "
+  )))
 
 # Register Formula
 model_formula <- reformulate(response = "reading_score", termlabels = predictors)
@@ -195,10 +249,7 @@ model_1_pvs <- withPV(
     data = survey_design,
     action = quote(
                 svyglm(
-                      reading_score ~ urbanity_final + SchType + S_Age + S_Gender + 
-                        # S_SES + 
-                        S_MISCED + S_FISCED + S_ATTREAD + ST13 + ST14 + C_RATIO + 
-                        school_multigrade + school_multishift + SC10 + SC11, 
+                      reading_score ~ urbanity_final + school_multigrade + school_multishift,
                       family = quasibinomial(), design = survey_design)
               ),
   rewrite = TRUE
@@ -226,17 +277,20 @@ model_1_results <- results |>
     p_value < 0.05 ~ "*",
     p_value < 0.1 ~ ".",
     TRUE ~ "" 
-  ))
+  )) |> 
+  select(-se) # per prof. brady west, can't exponeniate se
+
+# Result: expected rural has higher chance of being in band 2
 
 
-##### || Model 2: Base model with interactions -----
 
-##### || Model 3: Base model with interactions + other variables -----
+
+##### || Model 2: Base Model, with interactions, no other variables -----
 # Run logit model
 # copy formula code for direct type, does not work if formula = model_formula idk why
 model_formula
 
-model_1_pvs <- withPV(
+model_2_pvs <- withPV(
     mapping = list(
                   reading_score ~ is_band2_r_1 + is_band2_r_2 + 
                     is_band2_r_3 + is_band2_r_4 + is_band2_r_5
@@ -244,30 +298,28 @@ model_1_pvs <- withPV(
     data = survey_design,
     action = quote(
                 svyglm(
-                      reading_score ~ urbanity_final + SchType + S_Age + S_Gender + 
-                        # S_SES + 
-                        S_MISCED + S_FISCED + S_ATTREAD + ST13 + ST14 + C_RATIO + 
-                        school_multigrade + school_multishift + SC10 + SC11, 
+                      reading_score ~ urbanity_final + school_multigrade + school_multishift +
+                                      urbanity_final*school_multishift,
                       family = quasibinomial(), design = survey_design)
               ),
   rewrite = TRUE
 )
 
 # Pool the coefficients and se
-model_1_pooled <- MIcombine(model_1_pvs)
+model_2_pooled <- MIcombine(model_2_pvs)
 
 # Examine the results 
-results <- summary(model_1_pooled) |> 
+results <- summary(model_2_pooled) |> 
   mutate(across(.cols = -missInfo, 
                 ~exp(.))) |> 
   rownames_to_column()
 
-p_vals <- (2 * pt(-abs(coef(model_1_pooled) / SE(model_1_pooled)), df = model_1_pooled$df)) |> 
+p_vals <- (2 * pt(-abs(coef(model_2_pooled) / SE(model_2_pooled)), df = model_2_pooled$df)) |> 
   as.data.frame() |> 
   rename(p_value = 1) |> 
   rownames_to_column()
 
-model_1_results <- results |> 
+model_2_results <- results |> 
   left_join(p_vals) |> 
   mutate(sig = case_when(
     p_value < 0.001 ~ "***",
@@ -275,5 +327,163 @@ model_1_results <- results |>
     p_value < 0.05 ~ "*",
     p_value < 0.1 ~ ".",
     TRUE ~ "" 
-  ))
+  )) |> 
+  select(-se) # per prof. brady west, can't exponeniate se
+
+# Result: interaction between rural and multishift BUT is this due to omitted variable bias?
+
+
+
+
+
+##### || Model 3: Base model with interactions + SES only -----
+# Run logit model
+# copy formula code for direct type, does not work if formula = model_formula idk why
+model_formula
+
+model_3_pvs <- withPV(
+    mapping = list(
+                  reading_score ~ is_band2_r_1 + is_band2_r_2 + 
+                    is_band2_r_3 + is_band2_r_4 + is_band2_r_5
+                ),
+    data = survey_design,
+    action = quote(
+                svyglm(
+                      reading_score ~ urbanity_final + school_multigrade + school_multishift +
+                                      urbanity_final*school_multishift + 
+                                      S_Age + S_Gender + 
+                                      S_SES + 
+                                      S_MISCED + S_FISCED,
+                                      # S_ATTREAD + 
+                                      # ST13 + ST14 + 
+                                      # C_RATIO + SC10 + SC11 +
+                                      # SC10*school_multishift, 
+                      family = quasibinomial(), design = survey_design)
+              ),
+  rewrite = TRUE
+)
+
+# Pool the coefficients and se
+model_3_pooled <- MIcombine(model_3_pvs)
+
+# Examine the results 
+results <- summary(model_3_pooled) |> 
+  mutate(across(.cols = -missInfo, 
+                ~exp(.))) |> 
+  rownames_to_column()
+
+p_vals <- (2 * pt(-abs(coef(model_3_pooled) / SE(model_3_pooled)), df = model_3_pooled$df)) |> 
+  as.data.frame() |> 
+  rename(p_value = 1) |> 
+  rownames_to_column()
+
+model_3_results <- results |> 
+  left_join(p_vals) |> 
+  mutate(sig = case_when(
+    p_value < 0.001 ~ "***",
+    p_value < 0.01 ~ "**",
+    p_value < 0.05 ~ "*",
+    p_value < 0.1 ~ ".",
+    TRUE ~ "" 
+  )) |> 
+  mutate(rowname = str_replace_all(rowname, c(
+    "urbanity_final"    = "Urbanity: ",
+    "SchType"           = "School Sector: ",
+    "S_Age"             = "Student Age",
+    "S_Gender"          = "Gender: ",
+    "S_SES"             = "Socio-economic Status (SES)",
+    "S_MISCED"          = "Mother's Education Level",
+    "S_FISCED"          = "Father's Education Level",
+    "S_ATTREAD"         = "Attitude Towards Reading",
+    "ST13"              = "Preschool: ",
+    "ST14"              = "Grade Repetition: ",
+    "C_RATIO"           = "Student-Teacher Ratio",
+    "school_multigrade" = "Organization: ",
+    "school_multishift" = "Shift System: ",
+    "SC10"              = "Daily Hours: ",
+    "SC11"              = "Annual Weeks: "
+  )))
+
+# Result: here the interaciton with multishift and rural disappears, likely soaked up by SES
+# likely SES is correlated with "urbanity" 
+
+
+
+
+
+##### || Model 4: Base model with interactions + SES + Academics (Student and School) -----
+# Run logit model
+# copy formula code for direct type, does not work if formula = model_formula idk why
+model_formula
+
+model_4_pvs <- withPV(
+    mapping = list(
+                  reading_score ~ is_band2_r_1 + is_band2_r_2 + 
+                    is_band2_r_3 + is_band2_r_4 + is_band2_r_5
+                ),
+    data = survey_design,
+    action = quote(
+                svyglm(
+                      reading_score ~ urbanity_final + school_multigrade + school_multishift +
+                                      # urbanity_final*school_multishift + 
+                                      S_Age + S_Gender + 
+                                      S_SES + 
+                                      S_MISCED + S_FISCED +
+                                      S_ATTREAD + 
+                                      ST13 + ST14 + 
+                                      C_RATIO + SC10 + SC11 +
+                                      SC10*school_multishift, 
+                      family = quasibinomial(), design = survey_design)
+              ),
+  rewrite = TRUE
+)
+
+# Pool the coefficients and se
+model_4_pooled <- MIcombine(model_4_pvs)
+
+# Examine the results 
+results <- summary(model_4_pooled) |> 
+  mutate(across(.cols = -missInfo, 
+                ~exp(.))) |> 
+  rownames_to_column()
+
+p_vals <- (2 * pt(-abs(coef(model_4_pooled) / SE(model_4_pooled)), df = model_4_pooled$df)) |> 
+  as.data.frame() |> 
+  rename(p_value = 1) |> 
+  rownames_to_column()
+
+model_4_results <- results |> 
+  left_join(p_vals) |> 
+  mutate(sig = case_when(
+    p_value < 0.001 ~ "***",
+    p_value < 0.01 ~ "**",
+    p_value < 0.05 ~ "*",
+    p_value < 0.1 ~ ".",
+    TRUE ~ "" 
+  )) |> 
+  mutate(rowname = str_replace_all(rowname, c(
+    "urbanity_final"    = "Urbanity: ",
+    "SchType"           = "School Sector: ",
+    "S_Age"             = "Student Age",
+    "S_Gender"          = "Gender: ",
+    "S_SES"             = "Socio-economic Status (SES)",
+    "S_MISCED"          = "Mother's Education Level",
+    "S_FISCED"          = "Father's Education Level",
+    "S_ATTREAD"         = "Attitude Towards Reading",
+    "ST13"              = "Preschool: ",
+    "ST14"              = "Grade Repetition: ",
+    "C_RATIO"           = "Student-Teacher Ratio",
+    "school_multigrade" = "Organization: ",
+    "school_multishift" = "Shift System: ",
+    "SC10"              = "Daily Hours: ",
+    "SC11"              = "Annual Weeks: "
+  )))
+
+# now, we find an interaction bet daily hours and multishift, where for students in multishift 
+# schools even if they have an inherently higher odds of being in band 2, if their daily 
+# teaching hours is 6 or above, this odds is decreased by 
+
+test <- school_student_merge |> 
+  group_by(SC10, school_multishift) |> 
+  summarize(count = n())
 
